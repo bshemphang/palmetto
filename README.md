@@ -1,8 +1,9 @@
 # Palmetto
 
-[![Competition](https://make.fun/bounty/gta6-01)](https://make.fun/bounty/gta6-01)
-[![Entries](https://make.fun/bounty/gta6-01)](https://make.fun/bounty/gta6-01)
-[![Prize Pool $1,666 USDC](https://make.fun/bounty/gta6-01)](https://make.fun/r/v6wvv0dh)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/bshemphang/palmetto/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/bshemphang/palmetto/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+Sign up with my referral link: https://make.fun/r/v6wvv0dh
 
 Palmetto is a sun-soaked open-world crime game built for the make.fun gta6-01 bounty. You play Rico Vane, a wheelman fresh out of the Docks, working five story missions for crew boss Mara while the Palmetto PD, taxi fares and package runs fill the streets around you. Everything is original: the city, the characters, the vehicles, the story, the art and the sound. Pure HTML5 canvas and vanilla JavaScript, no engine, no libraries, no network requests.
 
