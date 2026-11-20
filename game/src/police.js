@@ -26,11 +26,39 @@
   }
 
   function spawnCopNear(x, y, inCar) {
-    var a = Math.random() * Math.PI * 2;
-    var sx = x + Math.cos(a) * 420;
-    var sy = y + Math.sin(a) * 420;
-    sx = Math.max(60, Math.min(City.W - 60, sx));
-    sy = Math.max(60, Math.min(City.H - 60, sy));
+    var sx = x;
+    var sy = y;
+    var placed = false;
+    for (var t = 0; t < 24 && !placed; t++) {
+      var a = Math.random() * Math.PI * 2;
+      var r = 380 + Math.random() * 80;
+      var cx = x + Math.cos(a) * r;
+      var cy = y + Math.sin(a) * r;
+      cx = Math.max(60, Math.min(City.W - 60, cx));
+      cy = Math.max(60, Math.min(City.H - 60, cy));
+      if (City.isRoad(cx, cy) && !City.collideCircle(cx, cy, 12)) {
+        sx = cx; sy = cy; placed = true;
+      }
+    }
+    if (!placed) {
+      var found = false;
+      for (var rr = 200; rr <= 640 && !found; rr += 40) {
+        for (var k = 0; k < 24 && !found; k++) {
+          var ang = (k / 24) * Math.PI * 2;
+          var fx = x + Math.cos(ang) * rr;
+          var fy = y + Math.sin(ang) * rr;
+          fx = Math.max(60, Math.min(City.W - 60, fx));
+          fy = Math.max(60, Math.min(City.H - 60, fy));
+          if (City.isRoad(fx, fy) && !City.collideCircle(fx, fy, 12)) {
+            sx = fx; sy = fy; found = true;
+          }
+        }
+      }
+      if (!found) {
+        sx = Math.max(60, Math.min(City.W - 60, sx));
+        sy = Math.max(60, Math.min(City.H - 60, sy));
+      }
+    }
     if (inCar) {
       var car = Vehicles.makeCar('police', sx, sy, Math.atan2(y - sy, x - sx), false);
       car.traffic = false;
@@ -60,9 +88,38 @@
       if (d < 700) seen = true;
       c.angle = Math.atan2(py - c.y, px - c.x);
       var sp = d < 60 ? c.speed * 1.2 : c.speed;
-      var nx = c.x + Math.cos(c.angle) * sp * dt;
-      var ny = c.y + Math.sin(c.angle) * sp * dt;
-      if (!City.collideCircle(nx, ny, 12)) { c.x = nx; c.y = ny; }
+      var dx = Math.cos(c.angle) * sp * dt;
+      var dy = Math.sin(c.angle) * sp * dt;
+      var movedX = false;
+      var movedY = false;
+      if (!City.collideCircle(c.x + dx, c.y, 12)) { c.x += dx; movedX = true; }
+      if (!City.collideCircle(c.x, c.y + dy, 12)) { c.y += dy; movedY = true; }
+      if (!movedX) {
+        var sy = sp * dt;
+        var northFree = !City.collideCircle(c.x, c.y - sy, 12);
+        var southFree = !City.collideCircle(c.x, c.y + sy, 12);
+        var pickY = 0;
+        if (northFree && !City.collideCircle(c.x + dx, c.y - sy, 12)) pickY = -1;
+        else if (southFree && !City.collideCircle(c.x + dx, c.y + sy, 12)) pickY = 1;
+        else if (dy < 0 && northFree) pickY = -1;
+        else if (dy > 0 && southFree) pickY = 1;
+        else if (northFree) pickY = -1;
+        else if (southFree) pickY = 1;
+        if (pickY !== 0) c.y += pickY * sy;
+      }
+      if (!movedY) {
+        var sx = sp * dt;
+        var westFree = !City.collideCircle(c.x - sx, c.y, 12);
+        var eastFree = !City.collideCircle(c.x + sx, c.y, 12);
+        var pickX = 0;
+        if (westFree && !City.collideCircle(c.x - sx, c.y + dy, 12)) pickX = -1;
+        else if (eastFree && !City.collideCircle(c.x + sx, c.y + dy, 12)) pickX = 1;
+        else if (dx < 0 && westFree) pickX = -1;
+        else if (dx > 0 && eastFree) pickX = 1;
+        else if (westFree) pickX = -1;
+        else if (eastFree) pickX = 1;
+        if (pickX !== 0) c.x += pickX * sx;
+      }
       c.phase += dt * 10;
       if (d < 26 && !playerInCar) {
         arrestTimer += dt;

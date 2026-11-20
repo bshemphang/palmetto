@@ -1,5 +1,1 @@
-[
-  { "name": "1-start.jpg", "query": "?shot=start&seed=1" },
-  { "name": "2-play.jpg", "query": "?shot=play&seed=1" },
-  { "name": "3-end.jpg", "query": "?shot=end&seed=1" }
-]
+[{"description":"Cover: wanted-3 police chase in a car with a mission in progress, police cars in frame","name":"1-cover.jpg","query":"?shot=chase"},{"description":"Driving through Downtown in a stolen car","name":"2-drive.jpg","query":"?shot=drive"},{"description":"On foot in the city streets","name":"3-foot.jpg","query":"?shot=foot"},{"description":"Mission 1 in progress, driving to the objective","name":"4-mission.jpg","query":"?shot=mission"}]
