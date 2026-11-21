@@ -4,6 +4,22 @@
   var SHIRTS = ['#c84a6a', '#4a8ac8', '#e8a83a', '#6ac84a', '#8a5ac8', '#e8e8e8', '#3a3a3a'];
   var SKINS = ['#f0c090', '#c89060', '#8a5a30', '#e8b890'];
 
+  function placeSpot(x, y) {
+    for (var t = 0; t < 20; t++) {
+      var cx = x + Math.random() * 60, cy = y + Math.random() * 60;
+      if (City.isRoad(cx, cy) && !City.collideCircle(cx, cy, 10)) return { x: cx, y: cy };
+    }
+    for (var r = 12; r <= 120; r += 12) {
+      for (var k = 0; k < 12; k++) {
+        var a = (k / 12) * Math.PI * 2;
+        var px = x + Math.cos(a) * r, py = y + Math.sin(a) * r;
+        if (px < 24 || py < 24 || px > City.W - 24 || py > City.H - 24) continue;
+        if (City.isRoad(px, py) && !City.collideCircle(px, py, 10)) return { x: px, y: py };
+      }
+    }
+    return { x: x, y: y };
+  }
+
   function spawnWorld() {
     peds = [];
     var spots = [
@@ -13,8 +29,9 @@
       [700, 1900], [1300, 1900], [1900, 1900], [2600, 1900], [2800, 700], [2800, 1500]
     ];
     for (var i = 0; i < spots.length; i++) {
+      var at = placeSpot(spots[i][0], spots[i][1]);
       peds.push({
-        x: spots[i][0] + Math.random() * 60, y: spots[i][1] + Math.random() * 60,
+        x: at.x, y: at.y,
         angle: Math.random() * Math.PI * 2, speed: 45 + Math.random() * 30,
         shirt: SHIRTS[i % SHIRTS.length], skin: SKINS[i % SKINS.length],
         flee: 0, phase: Math.random() * 6, dirTimer: 2 + Math.random() * 3, alive: true

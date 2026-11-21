@@ -5,23 +5,47 @@
   var cops = [];
   var copCars = [];
   var arrestTimer = 0;
+  var spawnDelay = 0;
+
+  function levelForHeat(h) {
+    if (h < 12) return 0;
+    if (h < 40) return 1;
+    if (h < 60) return 2;
+    if (h < 110) return 3;
+    if (h < 180) return 4;
+    return 5;
+  }
 
   function reset() {
-    wanted = 0; heat = 0; cops = []; copCars = []; arrestTimer = 0;
+    wanted = 0; heat = 0; cops = []; copCars = []; arrestTimer = 0; spawnDelay = 0;
   }
+
+  function resetArrest() { arrestTimer = 0; }
 
   function addHeat(amount) {
     heat += amount;
-    var level = heat < 12 ? 0 : heat < 30 ? 1 : heat < 60 ? 2 : heat < 110 ? 3 : heat < 180 ? 4 : 5;
+    var level = levelForHeat(heat);
     if (level > wanted) {
       wanted = level;
+      spawnDelay = 1;
       AudioSys.alarm();
     }
   }
 
+  function removeCopCar(car) {
+    var i = copCars.indexOf(car);
+    if (i !== -1) copCars.splice(i, 1);
+    if (window.Vehicles && Vehicles.removeCar) Vehicles.removeCar(car);
+  }
+
+  function clearCopCars() {
+    while (copCars.length > 0) removeCopCar(copCars[0]);
+  }
+
   function clearWanted() {
     wanted = 0; heat = 0;
-    cops = []; copCars = [];
+    cops = []; clearCopCars();
+    arrestTimer = 0; spawnDelay = 0;
     AudioSys.sirenSet(false);
   }
 
@@ -31,7 +55,7 @@
     var placed = false;
     for (var t = 0; t < 24 && !placed; t++) {
       var a = Math.random() * Math.PI * 2;
-      var r = 380 + Math.random() * 80;
+      var r = 420 + Math.random() * 120;
       var cx = x + Math.cos(a) * r;
       var cy = y + Math.sin(a) * r;
       cx = Math.max(60, Math.min(City.W - 60, cx));
@@ -42,7 +66,7 @@
     }
     if (!placed) {
       var found = false;
-      for (var rr = 200; rr <= 640 && !found; rr += 40) {
+      for (var rr = 200; rr <= 760 && !found; rr += 40) {
         for (var k = 0; k < 24 && !found; k++) {
           var ang = (k / 24) * Math.PI * 2;
           var fx = x + Math.cos(ang) * rr;
@@ -63,6 +87,8 @@
       var car = Vehicles.makeCar('police', sx, sy, Math.atan2(y - sy, x - sx), false);
       car.traffic = false;
       car.driver = 'police';
+      car.top = 280 + 25 * wanted;
+      car.ramCd = 0;
       copCars.push(car);
     } else {
       cops.push({ x: sx, y: sy, angle: 0, speed: 165, phase: 0 });
@@ -70,22 +96,43 @@
   }
 
   function update(dt, px, py, playerInCar, playerSpeed) {
+    spawnDelay = Math.max(0, spawnDelay - dt);
     var wantCops = wanted === 0 ? 0 : wanted <= 2 ? 2 : wanted <= 3 ? 3 : 4;
-    var wantCars = wanted >= 2 ? Math.min(3, wanted - 1) : 0;
-    while (cops.length < wantCops) spawnCopNear(px, py, false);
-    while (copCars.length < wantCars) spawnCopNear(px, py, true);
+    var wantCars = wanted >= 3 ? Math.min(3, wanted - 1) : 0;
+    while (cops.length > wantCops) {
+      var far = 0, farD = -1;
+      for (var fi = 0; fi < cops.length; fi++) {
+        var fd = Math.hypot(px - cops[fi].x, py - cops[fi].y);
+        if (fd > farD) { farD = fd; far = fi; }
+      }
+      cops.splice(far, 1);
+    }
+    while (copCars.length > wantCars) {
+      var farC = 0, farCD = -1;
+      for (var fj = 0; fj < copCars.length; fj++) {
+        var fjd = Math.hypot(px - copCars[fj].x, py - copCars[fj].y);
+        if (fjd > farCD) { farCD = fjd; farC = fj; }
+      }
+      removeCopCar(copCars[farC]);
+    }
+    if (spawnDelay <= 0) {
+      while (cops.length < wantCops) spawnCopNear(px, py, false);
+      while (copCars.length < wantCars) spawnCopNear(px, py, true);
+    }
     if (wanted === 0) {
-      cops = []; copCars = [];
+      cops = []; clearCopCars();
+      arrestTimer = 0;
       AudioSys.sirenSet(false);
       return;
     }
     AudioSys.sirenSet(true);
     AudioSys.sirenTick(dt);
     var seen = false;
+    var arrestClose = false;
     for (var i = 0; i < cops.length; i++) {
       var c = cops[i];
       var d = Math.hypot(px - c.x, py - c.y);
-      if (d < 700) seen = true;
+      if (d < 550) seen = true;
       c.angle = Math.atan2(py - c.y, px - c.x);
       var sp = d < 60 ? c.speed * 1.2 : c.speed;
       var dx = Math.cos(c.angle) * sp * dt;
@@ -121,36 +168,48 @@
         if (pickX !== 0) c.x += pickX * sx;
       }
       c.phase += dt * 10;
-      if (d < 26 && !playerInCar) {
-        arrestTimer += dt;
-        if (arrestTimer > 1.2) {
-          arrestTimer = 0;
-          window.GameEvents.busted();
-        }
+      if (d < 26 && !playerInCar) arrestClose = true;
+    }
+    if (arrestClose) {
+      arrestTimer += dt;
+      if (arrestTimer > 1.2) {
+        arrestTimer = 0;
+        window.GameEvents.busted();
       }
+    } else {
+      arrestTimer = Math.max(0, arrestTimer - dt * 2);
     }
     for (var j = 0; j < copCars.length; j++) {
       var car = copCars[j];
+      car.ramCd = Math.max(0, (car.ramCd || 0) - dt);
       var d2 = Math.hypot(px - car.x, py - car.y);
-      if (d2 < 700) seen = true;
+      if (d2 < 550) seen = true;
       var wantAngle = Math.atan2(py - car.y, px - car.x);
       var diff = wantAngle - car.angle;
       while (diff > Math.PI) diff -= Math.PI * 2;
       while (diff < -Math.PI) diff += Math.PI * 2;
       var steer = Math.max(-1, Math.min(1, diff * 2));
-      var hit = Vehicles.steerCar(car, dt, d2 > 90 ? 1 : 0.3, steer);
+      var throttle = car.ramCd > 0 ? 0 : (d2 > 90 ? 1 : 0.3);
+      var hit = Vehicles.steerCar(car, dt, throttle, steer);
       if (hit) car.angle += 0.6;
-      if (d2 < 55) {
+      if (d2 < 55 && Math.abs(car.speed) > 120 && car.ramCd <= 0) {
         window.GameEvents.rammed(Math.abs(car.speed));
-        car.speed *= -0.4;
+        car.speed *= -0.5;
+        car.ramCd = 2;
+        if (Player.car) {
+          var pc = Player.car;
+          var away = Math.atan2(py - car.y, px - car.x);
+          var push = 80 * Math.cos(away - pc.angle);
+          pc.speed = Math.max(-120, Math.min(pc.top, pc.speed + push));
+        }
       }
     }
-    if (!seen) {
+    if (!seen && spawnDelay <= 0) {
       heat = Math.max(0, heat - dt * 7);
-      var lvl = heat < 12 ? 0 : heat < 30 ? 1 : heat < 60 ? 2 : heat < 110 ? 3 : heat < 180 ? 4 : 5;
+      var lvl = levelForHeat(heat);
       if (lvl < wanted) {
         wanted = lvl;
-        if (wanted === 0) { cops = []; copCars = []; AudioSys.sirenSet(false); }
+        if (wanted === 0) { cops = []; clearCopCars(); arrestTimer = 0; AudioSys.sirenSet(false); }
       }
     } else {
       heat = Math.max(heat, wanted * 12);
@@ -180,6 +239,7 @@
 
   window.Police = {
     reset: reset, addHeat: addHeat, clearWanted: clearWanted, update: update, draw: draw,
+    resetArrest: resetArrest,
     getWanted: function () { return wanted; },
     setWanted: function (n) { wanted = n; heat = n * 25; },
     getCops: function () { return cops; },

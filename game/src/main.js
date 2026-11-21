@@ -14,6 +14,7 @@
   var flashText = '';
   var hitCd = 0;
   var ramCd = 0;
+  var pedRespawnPending = false;
   var params = new URLSearchParams(window.location.search);
   shotMode = params.get('shot');
   var seedParam = params.get('seed');
@@ -23,6 +24,7 @@
   window.GameEvents = {
     busted: function () {
       state = 'busted';
+      Missions.invalidateEscape();
       Player.cash = Math.max(0, Player.cash - 200);
       Police.clearWanted();
       AudioSys.engineStop();
@@ -43,6 +45,7 @@
 
   function wasted() {
     state = 'wasted';
+    Missions.invalidateEscape();
     Player.health = 100;
     Player.cash = Math.max(0, Player.cash - 100);
     Police.clearWanted();
@@ -70,7 +73,7 @@
     if (!s) { newGame(); return; }
     Player.cash = s.cash || 50;
     Player.health = s.health || 100;
-    Missions.loadProgress(s.missionIndex || 0, false);
+    Missions.loadProgress(s.missionIndex || 0, s.completed);
     Police.reset();
     PlayerApi.reset(s.x || 1600, s.y || 1300);
     Vehicles.spawnWorld();
@@ -121,6 +124,7 @@
     car.parked = false;
     Player.x = car.x; Player.y = car.y;
     Player.angle = car.angle;
+    Police.resetArrest();
     if (!silent) {
       Police.addHeat(14);
       flash('CAR STOLEN - THE COPS NOTICED');
@@ -135,8 +139,19 @@
     car.driver = null;
     car.speed = 0;
     Player.onFoot = true;
-    Player.x = car.x - Math.cos(car.angle) * 40;
-    Player.y = car.y - Math.sin(car.angle) * 40;
+    var spots = [
+      [car.x - Math.cos(car.angle) * 40, car.y - Math.sin(car.angle) * 40],
+      [car.x + Math.cos(car.angle + Math.PI / 2) * 40, car.y + Math.sin(car.angle + Math.PI / 2) * 40],
+      [car.x - Math.cos(car.angle + Math.PI / 2) * 40, car.y - Math.sin(car.angle + Math.PI / 2) * 40],
+      [car.x + Math.cos(car.angle) * 40, car.y + Math.sin(car.angle) * 40]
+    ];
+    var placed = false;
+    for (var i = 0; i < spots.length; i++) {
+      if (!City.collideCircle(spots[i][0], spots[i][1], 14)) {
+        Player.x = spots[i][0]; Player.y = spots[i][1]; placed = true; break;
+      }
+    }
+    if (!placed) { Player.x = car.x; Player.y = car.y; }
     Player.car = null;
     AudioSys.engineStop();
     AudioSys.engineSet(0, false);
@@ -208,7 +223,10 @@
           Pedestrians.scare(car.x, car.y, 240);
           AudioSys.crash();
           flash('PEDESTRIAN HIT');
-          setTimeout(function () { Pedestrians.spawnWorld(); }, 8000);
+          if (!pedRespawnPending) {
+            pedRespawnPending = true;
+            setTimeout(function () { Pedestrians.spawnWorld(); pedRespawnPending = false; }, 8000);
+          }
         }
       }
     } else {
@@ -233,16 +251,24 @@
     if (Input.pressed('p') || Input.pressed('P')) {
       if (!Missions.state.job) Missions.startPackage();
     }
+    if (Input.pressed('x')) {
+      if (Missions.state.job) Missions.cancelJob();
+    }
     Vehicles.updateTraffic(dt, Player.x, Player.y);
     Pedestrians.update(dt, Player.x, Player.y, Player.speed);
     Police.update(dt, Player.x, Player.y, !!inCar, Player.speed);
     Missions.update(dt, Player.x, Player.y, !!inCar, inCar ? inCar.type : null);
+    if (Missions.state.completedAll) { state = 'win'; return; }
     var sh = City.safehouse, sp = City.sprayShop;
     if (Math.hypot(Player.x - sh.x, Player.y - sh.y) < 90 && Police.getWanted() > 0) {
-      Police.clearWanted();
-      Player.health = 100;
-      flash('SAFEHOUSE - WANTED CLEARED, HEALTH RESTORED');
-      AudioSys.coin();
+      if (Police.getWanted() <= 2) {
+        Police.clearWanted();
+        Player.health = 100;
+        flash('SAFEHOUSE - WANTED CLEARED, HEALTH RESTORED');
+        AudioSys.coin();
+      } else {
+        flash('SAFEHOUSE - TOO HOT AT 3+ STARS, LOSE SOME HEAT FIRST');
+      }
     }
     if (Math.hypot(Player.x - sp.x, Player.y - sp.y) < 90 && Police.getWanted() > 0) {
       Police.clearWanted();
@@ -337,7 +363,7 @@
     ctx.fillStyle = '#fff';
     ctx.font = '15px Arial';
     ctx.fillText('WASD / Arrows: move and drive    E: enter or exit car    Space / F: punch or shoot', 640, 520);
-    ctx.fillText('Shift: run    M: start mission    T: taxi fare    P: package job    Mouse: menus', 640, 544);
+    ctx.fillText('Shift: run    M: start mission    T: taxi fare    P: package job    X: cancel job    Mouse: menus', 640, 544);
     ctx.fillText('Stealing cars, hitting pedestrians and shooting raise your wanted level.', 640, 568);
     ctx.fillText('Lose the cops out of sight, or clear it at the safehouse or spray shop.', 640, 592);
     ctx.textAlign = 'left';
@@ -361,6 +387,9 @@
   function render() {
     if (state === 'menu') {
       drawMenu();
+    } else if (state === 'win') {
+      drawWorld();
+      drawOverlay('PALMETTO IS YOURS', 'All five missions complete. Press Enter or click to free-roam.', '#ffd83a');
     } else if (state === 'busted') {
       drawWorld();
       drawOverlay('BUSTED', 'The Palmetto PD caught you. -$200 bail, wanted cleared.', '#4a9aff');
@@ -394,9 +423,16 @@
     window.__shotReady = true;
   }
 
+  function resumeFromOverlay() {
+    PlayerApi.reset(City.safehouse.x, City.safehouse.y);
+    state = 'playing';
+  }
+
   function handleClicks() {
     if (!Input.mouse.clicked) return;
     var mx = Input.mouse.clickX, my = Input.mouse.clickY;
+    if (state === 'win') { state = 'playing'; return; }
+    if (state === 'busted' || state === 'wasted') { resumeFromOverlay(); return; }
     if (state === 'menu') {
       for (var i = 0; i < buttons.length; i++) {
         var b = buttons[i];
@@ -413,10 +449,15 @@
     var dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     handleClicks();
+    if (state === 'menu') {
+      if (Input.pressed('Enter') || Input.pressed('Space')) newGame();
+    }
+    if (state === 'win') {
+      if (Input.pressed('Enter')) state = 'playing';
+    }
     if (state === 'busted' || state === 'wasted') {
       if (Input.pressed('Enter')) {
-        PlayerApi.reset(City.safehouse.x, City.safehouse.y);
-        state = 'playing';
+        resumeFromOverlay();
       }
     }
     update(dt);

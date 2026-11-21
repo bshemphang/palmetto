@@ -1,5 +1,9 @@
 // hud.js: health, cash, wanted stars, objective, speed and the live minimap.
 (function () {
+  var cachedMsg = null;
+  var cachedLines = null;
+  var cachedW = 0;
+
   function drawStars(ctx, wanted) {
     for (var i = 0; i < 5; i++) {
       var x = 1080 + i * 34, y = 30;
@@ -138,20 +142,26 @@
     }
     if (Missions.state.messageTimer > 0 && Missions.state.message) {
       ctx.font = 'bold 17px Arial';
-      var words = Missions.state.message.split(' ');
-      var lines = [''];
-      for (var wi = 0; wi < words.length; wi++) {
-        var trial = lines[lines.length - 1] + (lines[lines.length - 1] ? ' ' : '') + words[wi];
-        if (ctx.measureText(trial).width > 700 && lines[lines.length - 1]) lines.push(words[wi]);
-        else lines[lines.length - 1] = trial;
+      if (Missions.state.message !== cachedMsg) {
+        cachedMsg = Missions.state.message;
+        var words = cachedMsg.split(' ');
+        var lines = [''];
+        for (var wi = 0; wi < words.length; wi++) {
+          var trial = lines[lines.length - 1] + (lines[lines.length - 1] ? ' ' : '') + words[wi];
+          if (ctx.measureText(trial).width > 700 && lines[lines.length - 1]) lines.push(words[wi]);
+          else lines[lines.length - 1] = trial;
+        }
+        cachedLines = lines;
+        cachedW = 0;
+        for (var li = 0; li < lines.length; li++) cachedW = Math.max(cachedW, ctx.measureText(lines[li]).width);
       }
-      var mw2 = 0;
-      for (var li = 0; li < lines.length; li++) mw2 = Math.max(mw2, ctx.measureText(lines[li]).width);
+      var mw2 = cachedW;
+      var lines2 = cachedLines;
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect((1280 - mw2) / 2 - 14, 140, mw2 + 28, 20 + lines.length * 22);
+      ctx.fillRect((1280 - mw2) / 2 - 14, 140, mw2 + 28, 20 + lines2.length * 22);
       ctx.fillStyle = '#ffe89a';
       ctx.textAlign = 'center';
-      for (var lj = 0; lj < lines.length; lj++) ctx.fillText(lines[lj], 640, 164 + lj * 22);
+      for (var lj = 0; lj < lines2.length; lj++) ctx.fillText(lines2[lj], 640, 164 + lj * 22);
       ctx.textAlign = 'left';
     }
     if (view.nearCar) {

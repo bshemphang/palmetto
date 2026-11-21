@@ -127,7 +127,7 @@
     }
   }
 
-  function draw(ctx, cam) {
+  function drawInto(ctx, cam) {
     var x0 = Math.max(0, cam.x - 40), y0 = Math.max(0, cam.y - 40);
     var x1 = Math.min(W, cam.x + cam.w + 40), y1 = Math.min(H, cam.y + cam.h + 40);
     ctx.fillStyle = '#8fbf6a';
@@ -212,6 +212,29 @@
   }
 
   buildCity();
+
+  var staticCanvas = null;
+  try {
+    if (typeof document !== 'undefined' && document.createElement) {
+      var sc = document.createElement('canvas');
+      sc.width = W; sc.height = H;
+      var sctx = sc.getContext && sc.getContext('2d');
+      if (sctx) {
+        drawInto(sctx, { x: 0, y: 0, w: W, h: H });
+        staticCanvas = sc;
+      }
+    }
+  } catch (e) { staticCanvas = null; }
+
+  function draw(ctx, cam) {
+    if (staticCanvas) {
+      var x0 = Math.max(0, cam.x - 40), y0 = Math.max(0, cam.y - 40);
+      var x1 = Math.min(W, cam.x + cam.w + 40), y1 = Math.min(H, cam.y + cam.h + 40);
+      ctx.drawImage(staticCanvas, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+      return;
+    }
+    drawInto(ctx, cam);
+  }
 
   window.City = {
     W: W, H: H, ROAD: ROAD, BLOCK: BLOCK,
