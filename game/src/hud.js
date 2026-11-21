@@ -1,5 +1,8 @@
 // hud.js: health, cash, wanted stars, objective, speed and the live minimap.
 (function () {
+  // The mission message is re-wrapped only when its text changes; the old
+  // code paid a measureText per word on every frame.
+  var wrapCache = { msg: null, lines: null, w: 0 };
   function drawStars(ctx, wanted) {
     for (var i = 0; i < 5; i++) {
       var x = 1080 + i * 34, y = 30;
@@ -138,15 +141,21 @@
     }
     if (Missions.state.messageTimer > 0 && Missions.state.message) {
       ctx.font = 'bold 17px Arial';
-      var words = Missions.state.message.split(' ');
-      var lines = [''];
-      for (var wi = 0; wi < words.length; wi++) {
-        var trial = lines[lines.length - 1] + (lines[lines.length - 1] ? ' ' : '') + words[wi];
-        if (ctx.measureText(trial).width > 700 && lines[lines.length - 1]) lines.push(words[wi]);
-        else lines[lines.length - 1] = trial;
+      var lines, mw2;
+      if (wrapCache.msg === Missions.state.message) {
+        lines = wrapCache.lines; mw2 = wrapCache.w;
+      } else {
+        var words = Missions.state.message.split(' ');
+        lines = [''];
+        for (var wi = 0; wi < words.length; wi++) {
+          var trial = lines[lines.length - 1] + (lines[lines.length - 1] ? ' ' : '') + words[wi];
+          if (ctx.measureText(trial).width > 700 && lines[lines.length - 1]) lines.push(words[wi]);
+          else lines[lines.length - 1] = trial;
+        }
+        mw2 = 0;
+        for (var li = 0; li < lines.length; li++) mw2 = Math.max(mw2, ctx.measureText(lines[li]).width);
+        wrapCache = { msg: Missions.state.message, lines: lines, w: mw2 };
       }
-      var mw2 = 0;
-      for (var li = 0; li < lines.length; li++) mw2 = Math.max(mw2, ctx.measureText(lines[li]).width);
       ctx.fillStyle = 'rgba(0,0,0,0.7)';
       ctx.fillRect((1280 - mw2) / 2 - 14, 140, mw2 + 28, 20 + lines.length * 22);
       ctx.fillStyle = '#ffe89a';

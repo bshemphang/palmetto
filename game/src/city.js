@@ -38,6 +38,7 @@
   var palms = [];
   var parks = [];
   var crates = [];
+  var staticCanvas = null;
 
   function districtAt(x, y) {
     for (var i = 0; i < DISTRICTS.length; i++) {
@@ -130,6 +131,13 @@
   function draw(ctx, cam) {
     var x0 = Math.max(0, cam.x - 40), y0 = Math.max(0, cam.y - 40);
     var x1 = Math.min(W, cam.x + cam.w + 40), y1 = Math.min(H, cam.y + cam.h + 40);
+    // The city never changes, so draw it once to an offscreen canvas and
+    // blit the camera crop each frame. When there is no real canvas (a
+    // headless harness), fall through to the per-frame draw below.
+    if (staticCanvas) {
+      ctx.drawImage(staticCanvas, x0, y0, x1 - x0, y1 - y0, x0, y0, x1 - x0, y1 - y0);
+      return;
+    }
     ctx.fillStyle = '#8fbf6a';
     ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
     ctx.fillStyle = '#3a7a9e';
@@ -211,12 +219,32 @@
     }
   }
 
+  // Render the whole static city once. Guarded: any environment without a
+  // working canvas leaves staticCanvas null and draw() falls back.
+  function buildStatic() {
+    staticCanvas = null;
+    try {
+      if (typeof document === 'undefined' || !document.createElement) return;
+      var c = document.createElement('canvas');
+      if (!c || typeof c.getContext !== 'function') return;
+      c.width = W; c.height = H;
+      var sctx = c.getContext('2d');
+      if (!sctx) return;
+      draw(sctx, { x: 0, y: 0, w: W, h: H });
+      staticCanvas = c;
+    } catch (e) {
+      staticCanvas = null;
+    }
+  }
+
   buildCity();
+  buildStatic();
 
   window.City = {
     W: W, H: H, ROAD: ROAD, BLOCK: BLOCK,
     buildings: buildings, palms: palms, parks: parks,
     districtAt: districtAt, isRoad: isRoad, collideCircle: collideCircle,
+    staticReady: function () { return !!staticCanvas; },
     safehouse: { x: 2080, y: 2100 },
     sprayShop: { x: 1500, y: 500 },
     draw: draw

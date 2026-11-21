@@ -4,7 +4,7 @@
     {
       title: 'Welcome to Palmetto',
       brief: 'Mara needs a driver she can trust. Steal any car and drive to the blue marker at the Docks to meet her.',
-      goal: 'reach', x: 300, y: 300, reward: 150, needCar: true,
+      goal: 'reach', x: 300, y: 48, reward: 150, needCar: true,
       done: 'Mara: You drive like you mean it. The crew is yours now.'
     },
     {
@@ -16,7 +16,7 @@
     {
       title: 'Dockside Delivery',
       brief: 'Pick up the package at the Market and run it to the Docks before the timer ends. 90 seconds, no excuses.',
-      goal: 'timed', x: 300, y: 300, pickupX: 1000, pickupY: 1500, reward: 450, time: 90,
+      goal: 'timed', x: 300, y: 48, pickupX: 848, pickupY: 1500, reward: 450, time: 90,
       done: 'Mara: Delivered clean. The buyers are happy and so am I.'
     },
     {
@@ -35,7 +35,8 @@
 
   var state = {
     index: 0, active: false, phase: 'idle', timer: 0, message: '',
-    messageTimer: 0, job: null, jobTimer: 0, completedAll: false
+    messageTimer: 0, job: null, jobTimer: 0, completedAll: false,
+    cleanEscape: false
   };
 
   function current() { return MISSIONS[state.index] || null; }
@@ -46,7 +47,7 @@
     var m = current();
     if (!m) { state.active = false; state.completedAll = true; return; }
     if (m.goal === 'timed') { state.phase = 'pickup'; state.timer = m.time; }
-    if (m.goal === 'escape') { Police.setWanted(3); }
+    if (m.goal === 'escape') { Police.setWanted(3); state.cleanEscape = true; }
     state.message = m.title + ': ' + m.brief;
     state.messageTimer = 6;
     AudioSys.mission();
@@ -74,7 +75,7 @@
   }
 
   function startPackage() {
-    var spots = [[300, 1500], [2100, 300], [900, 1900], [2500, 700]];
+    var spots = [[48, 1500], [2100, 300], [900, 1900], [2500, 700]];
     var s = spots[Math.floor(Math.random() * spots.length)];
     state.job = { kind: 'package', x: s[0], y: s[1], reward: 120, phase: 'pickup' };
     state.message = 'Package job: collect the package at the green marker.';
@@ -122,6 +123,16 @@
           state.messageTimer = 3;
           return;
         }
+        if (m.goal === 'escape' && !state.cleanEscape) {
+          state.message = 'No clean escape. Get wanted again, then lose them for real.';
+          state.messageTimer = 3;
+          return;
+        }
+        if (m.goal === 'escape' && !Police.decayedToZero()) {
+          state.message = 'That clear does not count. Get wanted again, then lose the cops on the road.';
+          state.messageTimer = 3;
+          return;
+        }
         complete();
       }
     }
@@ -148,6 +159,15 @@
     }
   }
 
+  function cancelJob() {
+    if (!state.job) return;
+    state.job = null;
+    state.message = 'Job cancelled.';
+    state.messageTimer = 3;
+  }
+
+  function invalidateEscape() { state.cleanEscape = false; }
+
   function marker() {
     if (state.active) {
       var m = current();
@@ -162,15 +182,18 @@
   window.Missions = {
     MISSIONS: MISSIONS, state: state, current: current, start: start,
     complete: complete, startTaxi: startTaxi, startPackage: startPackage,
+    cancelJob: cancelJob, invalidateEscape: invalidateEscape,
     update: update, marker: marker,
     reset: function () {
       state.index = 0; state.active = false; state.phase = 'idle';
       state.timer = 0; state.job = null; state.completedAll = false;
+      state.cleanEscape = false;
       state.message = ''; state.messageTimer = 0;
     },
     loadProgress: function (index, completed) {
       state.index = index || 0;
       state.completedAll = !!completed;
+      state.cleanEscape = false;
       state.active = false; state.phase = 'idle'; state.job = null;
     }
   };

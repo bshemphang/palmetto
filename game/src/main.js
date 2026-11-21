@@ -14,6 +14,9 @@
   var flashText = '';
   var hitCd = 0;
   var ramCd = 0;
+  var winSeen = false;
+  var pedRespawnPending = false;
+  var prevWanted = 0;
   var params = new URLSearchParams(window.location.search);
   shotMode = params.get('shot');
   var seedParam = params.get('seed');
@@ -24,6 +27,7 @@
     busted: function () {
       state = 'busted';
       Player.cash = Math.max(0, Player.cash - 200);
+      Missions.invalidateEscape();
       Police.clearWanted();
       AudioSys.engineStop();
       AudioSys.sirenSet(false);
@@ -45,6 +49,7 @@
     state = 'wasted';
     Player.health = 100;
     Player.cash = Math.max(0, Player.cash - 100);
+    Missions.invalidateEscape();
     Police.clearWanted();
     if (Player.car) { Player.car.driver = null; Player.car = null; Player.onFoot = true; }
     Player.x = City.safehouse.x; Player.y = City.safehouse.y;
@@ -55,6 +60,9 @@
     SaveSys.clear();
     Player.cash = 50;
     Player.health = 100;
+    winSeen = false;
+    pedRespawnPending = false;
+    prevWanted = 0;
     Missions.reset();
     Police.reset();
     PlayerApi.reset(1600, 1300);
@@ -70,13 +78,21 @@
     if (!s) { newGame(); return; }
     Player.cash = s.cash || 50;
     Player.health = s.health || 100;
-    Missions.loadProgress(s.missionIndex || 0, false);
+    winSeen = false;
+    pedRespawnPending = false;
+    prevWanted = 0;
+    Missions.loadProgress(s.missionIndex || 0, s.completed);
     Police.reset();
     PlayerApi.reset(s.x || 1600, s.y || 1300);
     Vehicles.spawnWorld();
     Pedestrians.spawnWorld();
     state = 'playing';
     AudioSys.unlock();
+  }
+
+  function resumeAfterBust() {
+    PlayerApi.reset(City.safehouse.x, City.safehouse.y);
+    state = 'playing';
   }
 
   function setupShot(mode) {
@@ -121,6 +137,7 @@
     car.parked = false;
     Player.x = car.x; Player.y = car.y;
     Player.angle = car.angle;
+    Police.resetArrest();
     if (!silent) {
       Police.addHeat(14);
       flash('CAR STOLEN - THE COPS NOTICED');
@@ -135,8 +152,23 @@
     car.driver = null;
     car.speed = 0;
     Player.onFoot = true;
-    Player.x = car.x - Math.cos(car.angle) * 40;
-    Player.y = car.y - Math.sin(car.angle) * 40;
+    // Step out where there is room: behind first, then left, right, front.
+    // The old code only tried behind, which wedged the player inside a
+    // building whenever the car faced one.
+    var fx = Math.cos(car.angle), fy = Math.sin(car.angle);
+    var spots = [
+      { x: car.x - fx * 40, y: car.y - fy * 40 },
+      { x: car.x + fy * 40, y: car.y - fx * 40 },
+      { x: car.x - fy * 40, y: car.y + fx * 40 },
+      { x: car.x + fx * 40, y: car.y + fy * 40 }
+    ];
+    var placed = false;
+    for (var i = 0; i < spots.length; i++) {
+      if (!City.collideCircle(spots[i].x, spots[i].y, 14)) {
+        Player.x = spots[i].x; Player.y = spots[i].y; placed = true; break;
+      }
+    }
+    if (!placed) { Player.x = car.x; Player.y = car.y; }
     Player.car = null;
     AudioSys.engineStop();
     AudioSys.engineSet(0, false);
@@ -208,7 +240,10 @@
           Pedestrians.scare(car.x, car.y, 240);
           AudioSys.crash();
           flash('PEDESTRIAN HIT');
-          setTimeout(function () { Pedestrians.spawnWorld(); }, 8000);
+          if (!pedRespawnPending) {
+            pedRespawnPending = true;
+            setTimeout(function () { pedRespawnPending = false; Pedestrians.spawnWorld(); }, 8000);
+          }
         }
       }
     } else {
@@ -233,22 +268,46 @@
     if (Input.pressed('p') || Input.pressed('P')) {
       if (!Missions.state.job) Missions.startPackage();
     }
+    if (Input.pressed('x') || Input.pressed('X')) {
+      Missions.cancelJob();
+    }
     Vehicles.updateTraffic(dt, Player.x, Player.y);
     Pedestrians.update(dt, Player.x, Player.y, Player.speed);
     Police.update(dt, Player.x, Player.y, !!inCar, Player.speed);
+    // A fresh wanted episode is a fresh escape: getting wanted again after
+    // a bust or waste re-arms the clean-escape flag for mission 4.
+    var wNow = Police.getWanted();
+    if (prevWanted === 0 && wNow > 0) Missions.state.cleanEscape = true;
+    prevWanted = wNow;
     Missions.update(dt, Player.x, Player.y, !!inCar, inCar ? inCar.type : null);
     var sh = City.safehouse, sp = City.sprayShop;
+    var escapeActive = Missions.state.active && Missions.current() && Missions.current().goal === 'escape';
     if (Math.hypot(Player.x - sh.x, Player.y - sh.y) < 90 && Police.getWanted() > 0) {
-      Police.clearWanted();
-      Player.health = 100;
-      flash('SAFEHOUSE - WANTED CLEARED, HEALTH RESTORED');
-      AudioSys.coin();
+      if (escapeActive) {
+        // The safehouse IS the escape mission's destination: it cannot clear
+        // the wanted level while that mission is active, or the escape
+        // would be free and instant. Lose the cops on the road first.
+        flash('SAFEHOUSE - LOSE THE COPS FIRST, NO CLEAR DURING THE ESCAPE');
+      } else if (Police.getWanted() <= 2) {
+        Police.clearWanted();
+        Player.health = 100;
+        flash('SAFEHOUSE - WANTED CLEARED, HEALTH RESTORED');
+        AudioSys.coin();
+      } else {
+        flash('SAFEHOUSE - TOO HOT AT 3+ STARS, LOSE SOME HEAT FIRST');
+      }
     }
     if (Math.hypot(Player.x - sp.x, Player.y - sp.y) < 90 && Police.getWanted() > 0) {
-      Police.clearWanted();
-      Player.cash = Math.max(0, Player.cash - 50);
-      flash('SPRAY SHOP - CLEAN PAINT, WANTED CLEARED (-$50)');
-      AudioSys.coin();
+      if (escapeActive) {
+        // Same rule as the safehouse: a paid clear is not an escape, and
+        // the escape mission is about losing the cops on the road.
+        flash('SPRAY SHOP - NO CLEAN PAINT DURING THE ESCAPE, LOSE THEM FIRST');
+      } else {
+        Police.clearWanted();
+        Player.cash = Math.max(0, Player.cash - 50);
+        flash('SPRAY SHOP - CLEAN PAINT, WANTED CLEARED (-$50)');
+        AudioSys.coin();
+      }
     }
     if (Player.health <= 0) wasted();
     var tx = Player.x, ty = Player.y;
@@ -337,7 +396,7 @@
     ctx.fillStyle = '#fff';
     ctx.font = '15px Arial';
     ctx.fillText('WASD / Arrows: move and drive    E: enter or exit car    Space / F: punch or shoot', 640, 520);
-    ctx.fillText('Shift: run    M: start mission    T: taxi fare    P: package job    Mouse: menus', 640, 544);
+    ctx.fillText('Shift: run    M: start mission    T: taxi fare    P: package job    X: cancel job    Mouse: menus', 640, 544);
     ctx.fillText('Stealing cars, hitting pedestrians and shooting raise your wanted level.', 640, 568);
     ctx.fillText('Lose the cops out of sight, or clear it at the safehouse or spray shop.', 640, 592);
     ctx.textAlign = 'left';
@@ -367,6 +426,9 @@
     } else if (state === 'wasted') {
       drawWorld();
       drawOverlay('WASTED', 'You woke up at the safehouse. -$100 hospital bill.', '#ff4a4a');
+    } else if (Missions.state.completedAll && !winSeen) {
+      drawWorld();
+      drawOverlay('PALMETTO IS YOURS', 'All five missions complete. You own Palmetto now.', '#ffd83a');
     } else {
       drawWorld();
       var nearCar = null;
@@ -397,6 +459,10 @@
   function handleClicks() {
     if (!Input.mouse.clicked) return;
     var mx = Input.mouse.clickX, my = Input.mouse.clickY;
+    if (state === 'busted' || state === 'wasted') {
+      resumeAfterBust();
+      return;
+    }
     if (state === 'menu') {
       for (var i = 0; i < buttons.length; i++) {
         var b = buttons[i];
@@ -413,10 +479,15 @@
     var dt = Math.min(0.05, (now - last) / 1000);
     last = now;
     handleClicks();
+    if (state === 'menu' && (Input.pressed('Enter') || Input.pressed('Space'))) {
+      newGame();
+    }
+    if (state === 'playing' && Missions.state.completedAll && !winSeen && Input.pressed('Enter')) {
+      winSeen = true;
+    }
     if (state === 'busted' || state === 'wasted') {
       if (Input.pressed('Enter')) {
-        PlayerApi.reset(City.safehouse.x, City.safehouse.y);
-        state = 'playing';
+        resumeAfterBust();
       }
     }
     update(dt);

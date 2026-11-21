@@ -11,6 +11,15 @@
   var cars = [];
   var idCounter = 1;
 
+  // Traffic entry points on the road edges. Shared by spawnWorld and the
+  // out-of-bounds respawn in updateTraffic so traffic never re-enters
+  // inside a building.
+  var TSPOTS = [
+    ['sedan', 48, 448, 0], ['taxi', 48, 848, 0], ['sedan', 848, 48, Math.PI / 2],
+    ['pickup', 1248, 48, Math.PI / 2], ['sedan', 2048, 48, Math.PI / 2],
+    ['taxi', 2448, 48, Math.PI / 2], ['sedan', 48, 2048, 0], ['pickup', 1648, 48, Math.PI / 2]
+  ];
+
   function makeCar(type, x, y, angle, traffic) {
     var t = TYPES[type];
     var car = {
@@ -24,8 +33,16 @@
     return car;
   }
 
+  function removeCar(car) {
+    for (var i = 0; i < cars.length; i++) {
+      if (cars[i].id === car.id) { cars.splice(i, 1); return; }
+    }
+  }
+
   function spawnWorld() {
-    cars = [];
+    // Clear in place: window.Vehicles.cars must stay the same array object
+    // or the export goes stale after the first respawn.
+    cars.length = 0;
     idCounter = 1;
     var spots = [
       ['sedan', 448, 150], ['taxi', 448, 260], ['pickup', 850, 150], ['sports', 1250, 150],
@@ -38,11 +55,7 @@
       var s = spots[i];
       makeCar(s[0], s[1], s[2], Math.PI / 2, false);
     }
-    var tspots = [
-      ['sedan', 48, 448, 0], ['taxi', 48, 848, 0], ['sedan', 848, 48, Math.PI / 2],
-      ['pickup', 1248, 48, Math.PI / 2], ['sedan', 2048, 48, Math.PI / 2],
-      ['taxi', 2448, 48, Math.PI / 2], ['sedan', 48, 2048, 0], ['pickup', 1648, 48, Math.PI / 2]
-    ];
+    var tspots = TSPOTS;
     for (var j = 0; j < tspots.length; j++) {
       var t2 = tspots[j];
       makeCar(t2[0], t2[1], t2[2], t2[3], true);
@@ -106,11 +119,18 @@
         if (City.isRoad(rx, ry)) c.angle = right; else c.angle = (c.angle - Math.PI / 2 + Math.PI * 2) % (Math.PI * 2);
       }
       c.speed += ((blocked ? 0 : 150) - c.speed) * Math.min(1, dt * 1.2);
-      c.x += Math.cos(c.angle) * c.speed * dt;
-      c.y += Math.sin(c.angle) * c.speed * dt;
+      var nx = c.x + Math.cos(c.angle) * c.speed * dt;
+      var ny = c.y + Math.sin(c.angle) * c.speed * dt;
+      if (!City.collideCircle(nx, ny, 18)) {
+        c.x = nx; c.y = ny;
+      } else {
+        c.angle = (c.angle + Math.PI / 2) % (Math.PI * 2);
+        c.speed *= 0.5;
+      }
       if (c.x < 40 || c.x > City.W - 40 || c.y < 40 || c.y > City.H - 40) {
-        c.x = 48 + Math.random() * 200; c.y = 48 + Math.random() * 200;
-        c.angle = 0;
+        var t = TSPOTS[Math.floor(Math.random() * TSPOTS.length)];
+        c.x = t[1]; c.y = t[2]; c.angle = t[3];
+        c.speed = 0;
       }
     }
   }
@@ -164,7 +184,7 @@
 
   window.Vehicles = {
     cars: cars, TYPES: TYPES, spawnWorld: spawnWorld,
-    makeCar: makeCar, nearestParked: nearestParked, nearestCar: nearestCar,
+    makeCar: makeCar, removeCar: removeCar, nearestParked: nearestParked, nearestCar: nearestCar,
     steerCar: steerCar, updateTraffic: updateTraffic, draw: draw,
     getCars: function () { return cars; }
   };
